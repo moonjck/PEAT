@@ -580,7 +580,7 @@ def build_argument_parser(version: str = "0.0.0") -> argparse.ArgumentParser:
     # NOTE: "default=None" means "use the default in peat.config or elsewhere"
     seen_subp = (
         set()
-    )  # helps reslove conflict issues when parsers are added twice due to alias, etc.
+    )  # helps resolve conflict issues when parsers are added twice due to alias, etc.
     for _, subp in subparsers.choices.items():
         if id(subp) in seen_subp:
             continue
