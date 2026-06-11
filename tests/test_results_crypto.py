@@ -1,19 +1,9 @@
-from pathlib import Path
+import zipfile
 from unittest.mock import MagicMock
 
 import pytest
 
 from peat import results_crypto
-
-
-@pytest.fixture
-def mock_peat_results(tmp_path) -> Path:
-    mock_peat_results: Path = tmp_path / "mock_peat_results"
-    mock_peat_results.mkdir()
-    (mock_peat_results / "file1.txt").write_text("hello")
-    (mock_peat_results / "file2.txt").write_text("world")
-
-    return mock_peat_results
 
 
 def test_mock_peat_results_exists(mock_peat_results):
@@ -96,3 +86,42 @@ def test_unzip_decrypt_success(monkeypatch, tmp_path):
     assert result is True
     mock_zip.setpassword.assert_called_once_with(b"secret")
     mock_zip.extractall.assert_called_once()
+
+
+def test_unzip_decrypt_requires_pwd(monkeypatch, tmp_path):
+    encrypted_file = tmp_path / "encrypted_peat_results.zip"
+    encrypted_file.write_text("fake zip content")
+
+    mock_zip_class = MagicMock()
+    # need to return the mock zip in context manager to check for password
+    mock_zip = mock_zip_class.return_value.__enter__.return_value
+
+    monkeypatch.setattr(results_crypto.pyzipper, "is_zipfile", lambda _is_dir: True)
+    # patch the pyzipper AESZipFile function and return a mock zip class
+    monkeypatch.setattr(results_crypto.pyzipper, "AESZipFile", mock_zip_class)
+
+    # patch getpass to simulate a prompt
+    monkeypatch.setattr(results_crypto.getpass, "getpass", lambda _prompt: "typed_pw")
+
+    result = results_crypto.unzip_decrypt_results(encrypted_file, tmp_path, None)
+    assert result is True
+    mock_zip.setpassword.assert_called_once_with(b"typed_pw")
+
+
+def test_encrypted_zip_cannot_be_opened_wrong_pwd(mock_encrypted_peat_results, tmp_path):
+    result = results_crypto.unzip_decrypt_results(
+        encrypted_dir_path=mock_encrypted_peat_results,
+        write_path=tmp_path,
+        user_password="wrongpass",
+    )
+
+    assert result is False
+
+
+def test_encrypted_zip_cannot_be_opened_with_zip(mock_encrypted_peat_results):
+    with zipfile.ZipFile(mock_encrypted_peat_results, "r") as zf:
+        # archive is readable, but file contents are encrypted
+        assert set(zf.namelist()) == {"file1.txt", "file2.txt"}
+
+        with pytest.raises(RuntimeError, match="encrypted, password required for extraction"):
+            zf.read("file1.txt")
